@@ -1,0 +1,5 @@
+{
+  "name": "Big Elephant",
+  "description": "An AI-powered web application that allows users to generate interactive web prototypes from descriptive prompts, inspiration images, and technical documents using the Gemini API.",
+  "requestFramePermissions": []
+}
