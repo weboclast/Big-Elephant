@@ -1,9 +1,10 @@
 import { generateImage } from '../services/geminiService';
+import { getCachedImage, setCachedImage } from './imageCache';
 
 /**
  * Finds all placeholder image URLs (from source.unsplash.com), extracts keywords from them,
- * generates new images using an AI model, and replaces the original URLs with the
- * base64 data URLs of the generated images.
+ * generates new images using an AI model (or retrieves from cache), and replaces the original URLs
+ * with the base64 data URLs of the images.
  * @param htmlContent The raw HTML content of the prototype.
  * @returns A promise that resolves with the HTML content including embedded AI-generated images.
  */
@@ -23,6 +24,14 @@ export const embedUnsplashImages = async (htmlContent: string): Promise<string> 
         const urlMap = new Map<string, string>();
 
         const generationPromises = uniqueUrls.map(async (originalUrl) => {
+            // 1. Check cache first
+            const cachedImage = getCachedImage(originalUrl);
+            if (cachedImage) {
+                urlMap.set(originalUrl, cachedImage);
+                return; // Skip generation, use cached version
+            }
+            
+            // 2. If not in cache, generate image
             let keyword = 'abstract background'; // Default keyword for better visuals
             try {
                 // A robust way to parse the URL and get the search query
@@ -39,6 +48,8 @@ export const embedUnsplashImages = async (htmlContent: string): Promise<string> 
             try {
                 const generatedImageDataUrl = await generateImage(keyword);
                 urlMap.set(originalUrl, generatedImageDataUrl);
+                // 3. Save the newly generated image to the cache
+                setCachedImage(originalUrl, generatedImageDataUrl);
             } catch (error) {
                 console.error(`Failed to generate image for keyword "${keyword}":`, error);
                 // The fallback placeholder is handled inside generateImage, so we just log here.

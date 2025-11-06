@@ -1,13 +1,12 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
 import StudioScreen from './components/StudioScreen';
-import NewProjectModal from './components/NewProjectModal';
 import type { Project } from './types';
 import Layout from './components/Layout';
 import HomeScreen from './components/HomeScreen';
 import DashboardScreen from './components/DashboardScreen';
 
 const PROJECTS_STORAGE_KEY = 'big-elephant-projects';
-const CURRENT_DATA_VERSION = 2; // Increment this for any future breaking data structure change
+const CURRENT_DATA_VERSION = 4; // Increment this for any future breaking data structure change
 
 interface StoredData {
   version: number;
@@ -61,7 +60,6 @@ const loadAndMigrateProjects = (): LoadResult => {
     }
     
     // --- MIGRATION PIPELINE ---
-    // Note: Always work with a new variable to avoid unexpected mutations.
     let migratedProjects = projectsToLoad;
 
     if (storedVersion < 2) {
@@ -71,9 +69,32 @@ const loadAndMigrateProjects = (): LoadResult => {
         tasks: p.tasks || [],
       }));
     }
+    if (storedVersion < 3) {
+      // Migrate from v2 to v3: Add the `theme` property to each project.
+       migratedProjects = migratedProjects.map(p => ({
+        ...p,
+        theme: p.theme || 'Material Design',
+      }));
+    }
+     if (storedVersion < 4) {
+      // Migrate from v3 to v4: Convert single inspirationImage to inspirationImages array.
+      migratedProjects = migratedProjects.map(p => {
+        const newProject = { ...p } as any; // Use any to handle dynamic properties
+        const oldInspiration = newProject.inspirationImage;
+        if (oldInspiration) {
+          newProject.inspirationImages = [oldInspiration];
+          newProject.activeInspirationImageIndex = 0;
+        } else {
+          newProject.inspirationImages = [];
+          newProject.activeInspirationImageIndex = -1;
+        }
+        delete newProject.inspirationImage;
+        return newProject as Project;
+      });
+    }
     
     // Future migrations go here...
-    // if (storedVersion < 3) { ... }
+    // if (storedVersion < 5) { ... }
 
     return { projects: migratedProjects, errorOccurred: false }; // Success!
 
@@ -81,43 +102,34 @@ const loadAndMigrateProjects = (): LoadResult => {
     console.error("CRITICAL: Project loading failed. Backing up potentially corrupt data.", error);
     console.warn("Original data string:", savedDataString);
 
-    // Create a timestamped backup of the problematic data.
     const backupKey = `${PROJECTS_STORAGE_KEY}-backup-${new Date().toISOString()}`;
     localStorage.setItem(backupKey, savedDataString);
     
-    // Remove the original key to prevent repeated load failures.
     localStorage.removeItem(PROJECTS_STORAGE_KEY);
 
-    // Inform the user. This is a last resort, but it's better than silent data loss.
     alert(
       "We're sorry, there was a problem loading your projects, likely due to an application update. " +
       "To protect your work, your existing data has been safely backed up and is NOT lost. " +
       "The application will start fresh for now. Please contact support or check your browser's developer console for the backup key if you need to recover your projects."
     );
 
-    // Return an empty array after the backup is complete, and flag that an error occurred.
     return { projects: [], errorOccurred: true };
   }
 };
 
 
 const App: React.FC = () => {
-  // Use a ref to ensure the loading logic runs exactly once on initial mount.
   const initialLoadRef = useRef<LoadResult | null>(null);
   if (initialLoadRef.current === null) {
       initialLoadRef.current = loadAndMigrateProjects();
   }
 
   const [projects, setProjects] = useState<Project[]>(initialLoadRef.current.projects);
-  // This state is crucial: it prevents the app from overwriting the backed-up data
-  // with an empty array if the initial load failed.
   const [allowSaving, setAllowSaving] = useState<boolean>(!initialLoadRef.current.errorOccurred);
 
   const [activeProject, setActiveProject] = useState<Project | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState<'home' | 'workspaces'>('home');
   
-  // On mount, check if localStorage is supported and warn the user if not.
   useEffect(() => {
     if (!isLocalStorageSupported()) {
         alert("Warning: Your browser appears to have Local Storage disabled. Project data will not be saved between sessions.");
@@ -125,8 +137,6 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // This effect is now guarded. It will NOT run and overwrite localStorage
-    // if the initial load failed.
     if (!allowSaving) {
       return;
     }
@@ -138,7 +148,6 @@ const App: React.FC = () => {
       localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(dataToSave));
     } catch (error) {
       console.error("Failed to save projects to localStorage", error);
-      // Add a user-facing alert to make storage errors visible.
       alert("Error: Could not save your project. Your browser's local storage might be full or disabled. Please check the browser console for more details.");
     }
   }, [projects, allowSaving]);
@@ -151,9 +160,7 @@ const App: React.FC = () => {
     };
     setProjects(prev => [...prev, newProject]);
     setActiveProject(newProject);
-    setCurrentPage('workspaces'); // Set the underlying page to workspaces
-    // If the user creates a project, it's a clear signal they want to start saving data,
-    // even if a previous load failed. This allows them to recover from the error state.
+    setCurrentPage('workspaces'); 
     setAllowSaving(true);
   }, []);
 
@@ -177,8 +184,6 @@ const App: React.FC = () => {
   const handleDeleteProject = useCallback((projectId: string) => {
     setProjects(prevProjects => {
       const newProjects = prevProjects.filter(p => p.id !== projectId);
-      // If the user deletes their very last project, we are in a clean, empty state.
-      // We should allow this empty state to be saved.
       if (newProjects.length === 0) {
         setAllowSaving(true);
       }
@@ -213,18 +218,13 @@ const App: React.FC = () => {
 
   return (
     <>
-      <NewProjectModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onCreateProject={handleCreateProject}
-      />
       <Layout 
         currentPage={currentPage} 
         onNavigate={handleNavigate}
-        onNewProjectClick={() => setIsModalOpen(true)}
+        onNewProjectClick={() => handleNavigate('home')}
       >
         {currentPage === 'home' && (
-            <HomeScreen onNewProjectClick={() => setIsModalOpen(true)} />
+            <HomeScreen onCreateProject={handleCreateProject} />
         )}
         {currentPage === 'workspaces' && (
             <DashboardScreen

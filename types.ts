@@ -21,11 +21,13 @@ export interface Project {
   name: string;
   lastModified: string;
   corePrompt: string;
-  inspirationImage?: ProjectFile | null;
+  inspirationImages: ProjectFile[];
+  activeInspirationImageIndex: number;
   prdDocument?: ProjectFile | null;
   generatedCode: GeneratedFile[];
   chatHistory: ChatMessage[];
   tasks: PageTask[];
+  theme: string;
 }
 
 export interface ChatMessage {

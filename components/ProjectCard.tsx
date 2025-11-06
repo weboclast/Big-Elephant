@@ -77,8 +77,8 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, onSelect, onRename, 
             )}
         </div>
       <div className="w-full h-40 bg-base-300 flex items-center justify-center">
-        {project.inspirationImage ? (
-            <img src={`data:${project.inspirationImage.type};base64,${project.inspirationImage.content}`} alt="Project thumbnail" className="w-full h-full object-cover" />
+        {project.inspirationImages && project.inspirationImages.length > 0 ? (
+            <img src={`data:${project.inspirationImages[0].type};base64,${project.inspirationImages[0].content}`} alt="Project thumbnail" className="w-full h-full object-cover" />
         ) : (
             <span className="material-symbols-outlined text-6xl text-base-100">
                 auto_awesome

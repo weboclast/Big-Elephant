@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import type { Project, DeviceView, GeneratedFile, PageTask } from '../types';
+import type { Project, DeviceView, GeneratedFile, PageTask, ProjectFile } from '../types';
 import { generatePrototype } from '../services/geminiService';
 import { embedUnsplashImages } from '../utils/imageUtils';
 import IconButton from './IconButton';
 import Spinner from './Spinner';
 import CodeModal from './CodeModal';
-import ProjectDocuments from './ProjectDocuments';
+import DesignInspirations from './DesignInspirations';
 import ProjectChecklist from './ProjectChecklist';
 
 interface StudioScreenProps {
@@ -28,7 +28,7 @@ const StudioScreen: React.FC<StudioScreenProps> = ({ project, onBack, onUpdatePr
   const [isCodeModalOpen, setIsCodeModalOpen] = useState(false);
   const [promptInput, setPromptInput] = useState('');
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const [activeTab, setActiveTab] = useState<'chat' | 'documents' | 'tasks'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'design' | 'tasks'>('chat');
   const [activeFile, setActiveFile] = useState('index.html');
   const [iframeContent, setIframeContent] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -85,15 +85,23 @@ const StudioScreen: React.FC<StudioScreenProps> = ({ project, onBack, onUpdatePr
   }, [activeFileContent]);
 
 
-  const handleGenerate = useCallback(async (promptText: string) => {
+  const handleGenerate = useCallback(async (promptText: string, projectContext?: Project) => {
     setIsLoading(true);
+    const baseProject = projectContext || currentProject;
 
-    const updatedHistory = [...currentProject.chatHistory, { role: 'user' as const, text: promptText }];
+    const updatedHistory = [...baseProject.chatHistory, { role: 'user' as const, text: promptText }];
     // Temporarily update chat history for optimistic UI response
-    setCurrentProject(prev => ({ ...prev, chatHistory: updatedHistory }));
+    setCurrentProject(prev => ({ 
+        ...prev, 
+        inspirationImages: baseProject.inspirationImages,
+        activeInspirationImageIndex: baseProject.activeInspirationImageIndex,
+        chatHistory: updatedHistory 
+    }));
     
-    const oldFileNames = new Set(currentProject.generatedCode.map(f => f.name));
-    const newFiles = await generatePrototype(currentProject, promptText);
+    const oldFileNames = new Set(baseProject.generatedCode.map(f => f.name));
+    
+    const projectForApi = { ...baseProject, chatHistory: updatedHistory };
+    const newFiles = await generatePrototype(projectForApi, promptText);
     const newFileName = newFiles.find(f => !oldFileNames.has(f.name))?.name;
     
     const finalHistory = [...updatedHistory, { role: 'model' as const, text: "Here is the updated prototype." }];
@@ -103,9 +111,9 @@ const StudioScreen: React.FC<StudioScreenProps> = ({ project, onBack, onUpdatePr
         return match ? match[1] : null;
     };
     const completedTaskName = promptToTaskName(promptText);
-    let updatedTasks = currentProject.tasks;
+    let updatedTasks = baseProject.tasks;
     if (completedTaskName) {
-        updatedTasks = currentProject.tasks.map(task => 
+        updatedTasks = baseProject.tasks.map(task => 
             task.name.toLowerCase() === completedTaskName.toLowerCase() 
             ? { ...task, status: 'completed', fileName: newFileName } 
             : task
@@ -113,7 +121,7 @@ const StudioScreen: React.FC<StudioScreenProps> = ({ project, onBack, onUpdatePr
     }
 
     const updatedProject: Project = {
-        ...currentProject,
+        ...baseProject,
         generatedCode: newFiles,
         chatHistory: finalHistory,
         lastModified: new Date().toLocaleDateString(),
@@ -149,6 +157,35 @@ const StudioScreen: React.FC<StudioScreenProps> = ({ project, onBack, onUpdatePr
   const handleViewPage = (fileName: string) => {
     setActiveFile(fileName);
   };
+  
+  const handleUpdateInspirations = useCallback((newImages: ProjectFile[], newActiveIndex: number) => {
+    const previousActiveImage = currentProject.inspirationImages[currentProject.activeInspirationImageIndex];
+    const newActiveImage = newImages[newActiveIndex];
+
+    const updatedProject: Project = {
+        ...currentProject,
+        inspirationImages: newImages,
+        activeInspirationImageIndex: newActiveIndex,
+    };
+
+    // If the active image changed, trigger a full regeneration with a more explicit prompt.
+    if (previousActiveImage?.content !== newActiveImage?.content) {
+        const activeFileBasename = activeFile.split('.')[0] || 'current';
+        const redesignPrompt = `This is a full redesign request. Re-generate the entire HTML and CSS for the '${activeFileBasename}' page. Use the PRD for all content and structure, but derive a completely new visual style from the new inspiration image I've selected.`;
+        handleGenerate(redesignPrompt, updatedProject);
+    } else {
+        // If only new images were added but the active one didn't change, just update state and save.
+        setCurrentProject(updatedProject);
+        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+        setSaveState('saving');
+        onUpdateProject(updatedProject);
+        saveTimeoutRef.current = window.setTimeout(() => {
+          setSaveState('saved');
+          saveTimeoutRef.current = window.setTimeout(() => setSaveState('idle'), 2000);
+        }, 500);
+    }
+  }, [currentProject, onUpdateProject, handleGenerate, activeFile]);
+
 
   return (
     <div className="flex h-screen bg-base-200 text-base-content font-sans">
@@ -196,10 +233,10 @@ const StudioScreen: React.FC<StudioScreenProps> = ({ project, onBack, onUpdatePr
                 Tasks
             </button>
             <button 
-                onClick={() => setActiveTab('documents')}
-                className={`pb-2 font-medium transition-colors duration-200 focus:outline-none ${activeTab === 'documents' ? 'text-primary border-b-2 border-primary' : 'text-gray-400 hover:text-white'}`}
+                onClick={() => setActiveTab('design')}
+                className={`pb-2 font-medium transition-colors duration-200 focus:outline-none ${activeTab === 'design' ? 'text-primary border-b-2 border-primary' : 'text-gray-400 hover:text-white'}`}
             >
-                Documents
+                Design Inspirations
             </button>
           </div>
         </div>
@@ -219,7 +256,7 @@ const StudioScreen: React.FC<StudioScreenProps> = ({ project, onBack, onUpdatePr
                 </div>
             )}
             {activeTab === 'tasks' && <ProjectChecklist project={currentProject} onGeneratePage={handleGeneratePage} onViewPage={handleViewPage} />}
-            {activeTab === 'documents' && <ProjectDocuments project={currentProject} />}
+            {activeTab === 'design' && <DesignInspirations project={currentProject} onUpdateInspirations={handleUpdateInspirations} />}
         </div>
 
         {activeTab === 'chat' && (
