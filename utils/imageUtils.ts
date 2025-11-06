@@ -1,39 +1,12 @@
+import { generateImage } from '../services/geminiService';
+
 /**
- * Converts a remote image URL to a base64 data URL using the Image and Canvas APIs.
- * This method is more robust than fetch() for cross-origin images as it bypasses CORS issues.
- * @param url The URL of the image to convert.
- * @returns A promise that resolves with the base64 data URL.
+ * Finds all placeholder image URLs (from source.unsplash.com), extracts keywords from them,
+ * generates new images using an AI model, and replaces the original URLs with the
+ * base64 data URLs of the generated images.
+ * @param htmlContent The raw HTML content of the prototype.
+ * @returns A promise that resolves with the HTML content including embedded AI-generated images.
  */
-const imageUrlToBase64 = (url: string): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = 'Anonymous'; // This is essential for cross-origin canvas usage.
-
-        img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.naturalWidth;
-            canvas.height = img.naturalHeight;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-                return reject(new Error('Could not get canvas context'));
-            }
-            ctx.drawImage(img, 0, 0);
-            // Get the data URL. The browser infers the mime type (e.g., image/jpeg) from the source.
-            const dataUrl = canvas.toDataURL(); 
-            resolve(dataUrl);
-        };
-
-        img.onerror = (error) => {
-            // This event object might not be very descriptive, but it signals a failure.
-            console.error(`Failed to load image from URL: ${url}`, error);
-            reject(new Error(`Failed to load image: ${url}`));
-        };
-
-        img.src = url;
-    });
-};
-
-
 export const embedUnsplashImages = async (htmlContent: string): Promise<string> => {
     // Regex to find all Unsplash source URLs in img tags
     const unsplashUrlRegex = /https:\/\/source\.unsplash\.com\/[^\s"']+/g;
@@ -49,44 +22,42 @@ export const embedUnsplashImages = async (htmlContent: string): Promise<string> 
     try {
         const urlMap = new Map<string, string>();
 
-        const conversionPromises = uniqueUrls.map(async (originalUrl) => {
-            // Sanitize URL: if multiple keywords are present, use only the first one.
-            // This prevents issues with URLs like "?clean,modern,interior"
-            let processUrl = originalUrl;
-            const urlParts = originalUrl.split('?');
-            if (urlParts.length > 1 && urlParts[1]) {
-                const keywords = urlParts[1];
-                if (keywords.includes(',')) {
-                    const firstKeyword = keywords.split(',')[0].trim();
-                    processUrl = `${urlParts[0]}?${firstKeyword}`;
+        const generationPromises = uniqueUrls.map(async (originalUrl) => {
+            let keyword = 'abstract background'; // Default keyword for better visuals
+            try {
+                // A robust way to parse the URL and get the search query
+                const url = new URL(originalUrl);
+                const query = url.search.substring(1); // remove '?'
+                if (query) {
+                    // Take only the first keyword if multiple are present (e.g., "tech,business")
+                    keyword = decodeURIComponent(query.split(',')[0].trim());
                 }
+            } catch (e) {
+                console.warn(`Could not parse URL, using default keyword for: ${originalUrl}`);
             }
             
             try {
-                // Use the new, more reliable method instead of fetch.
-                const base64 = await imageUrlToBase64(processUrl);
-                urlMap.set(originalUrl, base64);
+                const generatedImageDataUrl = await generateImage(keyword);
+                urlMap.set(originalUrl, generatedImageDataUrl);
             } catch (error) {
-                console.error(`Error processing image ${processUrl}:`, error);
-                 // Fallback on network error
-                urlMap.set(originalUrl, 'https://via.placeholder.com/800x600.png?text=Image+Load+Error');
+                console.error(`Failed to generate image for keyword "${keyword}":`, error);
+                // The fallback placeholder is handled inside generateImage, so we just log here.
             }
         });
 
-        await Promise.all(conversionPromises);
+        await Promise.all(generationPromises);
 
-        // Replace all occurrences of each URL with its base64 version
-        urlMap.forEach((base64, originalUrl) => {
-            // Use a regex to replace all instances of the URL to handle cases where the same image is used multiple times.
-            // Escape special regex characters in the URL.
+        // Replace all occurrences of each URL with its generated data URL
+        urlMap.forEach((dataUrl, originalUrl) => {
+            // Escape special regex characters in the URL before creating the RegExp
             const escapedUrl = originalUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             const replacementRegex = new RegExp(escapedUrl, 'g');
-            processedHtml = processedHtml.replace(replacementRegex, base64);
+            processedHtml = processedHtml.replace(replacementRegex, dataUrl);
         });
 
     } catch (error) {
-        console.error("An error occurred during image embedding:", error);
-        // Return original content on catastrophic failure
+        console.error("An error occurred during the AI image embedding process:", error);
+        // On catastrophic failure, return the original content to avoid breaking the UI
         return htmlContent;
     }
 

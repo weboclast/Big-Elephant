@@ -1,8 +1,10 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import DashboardScreen from './components/DashboardScreen';
 import StudioScreen from './components/StudioScreen';
 import NewProjectModal from './components/NewProjectModal';
 import type { Project } from './types';
+import Layout from './components/Layout';
+import HomeScreen from './components/HomeScreen';
+import DashboardScreen from './components/DashboardScreen';
 
 const PROJECTS_STORAGE_KEY = 'big-elephant-projects';
 const CURRENT_DATA_VERSION = 2; // Increment this for any future breaking data structure change
@@ -16,6 +18,22 @@ interface LoadResult {
   projects: Project[];
   errorOccurred: boolean;
 }
+
+/**
+ * Checks if localStorage is available and writable.
+ * @returns {boolean} True if localStorage is supported, false otherwise.
+ */
+const isLocalStorageSupported = (): boolean => {
+    try {
+        const testKey = '__testLocalStorage__';
+        localStorage.setItem(testKey, testKey);
+        localStorage.removeItem(testKey);
+        return true;
+    } catch (e) {
+        return false;
+    }
+};
+
 
 const loadAndMigrateProjects = (): LoadResult => {
   const savedDataString = localStorage.getItem(PROJECTS_STORAGE_KEY);
@@ -97,6 +115,14 @@ const App: React.FC = () => {
 
   const [activeProject, setActiveProject] = useState<Project | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState<'home' | 'workspaces'>('home');
+  
+  // On mount, check if localStorage is supported and warn the user if not.
+  useEffect(() => {
+    if (!isLocalStorageSupported()) {
+        alert("Warning: Your browser appears to have Local Storage disabled. Project data will not be saved between sessions.");
+    }
+  }, []);
 
   useEffect(() => {
     // This effect is now guarded. It will NOT run and overwrite localStorage
@@ -112,6 +138,8 @@ const App: React.FC = () => {
       localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(dataToSave));
     } catch (error) {
       console.error("Failed to save projects to localStorage", error);
+      // Add a user-facing alert to make storage errors visible.
+      alert("Error: Could not save your project. Your browser's local storage might be full or disabled. Please check the browser console for more details.");
     }
   }, [projects, allowSaving]);
 
@@ -123,6 +151,7 @@ const App: React.FC = () => {
     };
     setProjects(prev => [...prev, newProject]);
     setActiveProject(newProject);
+    setCurrentPage('workspaces'); // Set the underlying page to workspaces
     // If the user creates a project, it's a clear signal they want to start saving data,
     // even if a previous load failed. This allows them to recover from the error state.
     setAllowSaving(true);
@@ -164,7 +193,23 @@ const App: React.FC = () => {
 
   const handleBackToDashboard = useCallback(() => {
     setActiveProject(null);
+    setCurrentPage('workspaces');
   }, []);
+
+  const handleNavigate = useCallback((page: 'home' | 'workspaces') => {
+    setCurrentPage(page);
+  }, []);
+
+
+  if (activeProject) {
+    return (
+       <StudioScreen
+          project={activeProject}
+          onBack={handleBackToDashboard}
+          onUpdateProject={handleUpdateProject}
+        />
+    )
+  }
 
   return (
     <>
@@ -173,21 +218,23 @@ const App: React.FC = () => {
         onClose={() => setIsModalOpen(false)}
         onCreateProject={handleCreateProject}
       />
-      {activeProject ? (
-        <StudioScreen
-          project={activeProject}
-          onBack={handleBackToDashboard}
-          onUpdateProject={handleUpdateProject}
-        />
-      ) : (
-        <DashboardScreen
-          projects={projects}
-          onSelectProject={handleSelectProject}
-          onNewProjectClick={() => setIsModalOpen(true)}
-          onRenameProject={handleRenameProject}
-          onDeleteProject={handleDeleteProject}
-        />
-      )}
+      <Layout 
+        currentPage={currentPage} 
+        onNavigate={handleNavigate}
+        onNewProjectClick={() => setIsModalOpen(true)}
+      >
+        {currentPage === 'home' && (
+            <HomeScreen onNewProjectClick={() => setIsModalOpen(true)} />
+        )}
+        {currentPage === 'workspaces' && (
+            <DashboardScreen
+                projects={projects}
+                onSelectProject={handleSelectProject}
+                onRenameProject={handleRenameProject}
+                onDeleteProject={handleDeleteProject}
+            />
+        )}
+      </Layout>
     </>
   );
 };

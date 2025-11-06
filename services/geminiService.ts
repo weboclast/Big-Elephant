@@ -6,7 +6,7 @@ if (!process.env.API_KEY) {
     console.warn("API_KEY environment variable not set. Using a placeholder. Please set your API key for the app to function.");
 }
 
-const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || 'YOUR_API_KEY_HERE' });
 const model = 'gemini-2.5-pro';
 
 const fileToGenerativePart = (file: ProjectFile): Part => {
@@ -241,5 +241,36 @@ document.addEventListener('click', function(e) {
     } catch (error) {
         console.error("Error calling Gemini API:", error);
         return [{ name: 'error.html', content: `<p>Error generating prototype. Please check the console for details.</p>` }];
+    }
+};
+
+
+export const generateImage = async (prompt: string): Promise<string> => {
+    try {
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || 'YOUR_API_KEY_HERE' });
+        
+        // Enhance the prompt for better, more consistent results
+        const enhancedPrompt = `A high-quality, professional, photorealistic image for a modern website, representing: ${prompt}. Clean, minimalist aesthetic.`;
+
+        const response = await ai.models.generateImages({
+            model: 'imagen-4.0-generate-001',
+            prompt: enhancedPrompt,
+            config: {
+              numberOfImages: 1,
+              outputMimeType: 'image/jpeg',
+              aspectRatio: '16:9',
+            },
+        });
+
+        if (response.generatedImages && response.generatedImages.length > 0) {
+            const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
+            return `data:image/jpeg;base64,${base64ImageBytes}`;
+        }
+        throw new Error("Image generation returned no images.");
+
+    } catch(error) {
+        console.error(`Error generating image for prompt "${prompt}":`, error);
+        // Return a placeholder SVG data URI on failure so the layout doesn't break
+        return 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYwMCIgaGVpZ2h0PSI5MDAiIHZpZXdCb3g9IjAgMCAxNjAwIDkwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZTBlMGUwIj48L3JlY3Q+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJzYW5zLXNlcmlmIiBmb250LXNpemU9IjQ4cHgiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNhY2FjYWMiIGR5PSIuM2VtIj5JbWFnZSBDb3VsZCBOb3QgQmUgR2VuZXJhdGVkPC90ZXh0Pjwvc3ZnPg==';
     }
 };

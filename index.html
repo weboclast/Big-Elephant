@@ -27,15 +27,25 @@
         theme: {
           extend: {
             colors: {
-              'primary': '#1a73e8',
-              'primary-focus': '#1765cc',
+              'primary': '#0D9488', // Teal-600
+              'primary-focus': '#0F766E', // Teal-700
               'primary-content': '#ffffff',
-              'secondary': '#9333ea',
-              'secondary-focus': '#7e22ce',
-              'base-100': '#1f2023',
-              'base-200': '#2c2d30',
-              'base-300': '#3a3b3e',
-              'base-content': '#e0e0e0',
+              'accent': '#14B8A6', // Teal-500
+              'base-100': '#f7f7f8', // Main background
+              'base-200': '#ffffff', // Sidebar, card background
+              'base-300': '#e5e7eb', // Borders, subtle backgrounds
+              'base-content': '#1f2937', // Main text color
+              'subtle-text': '#6b7280', // for placeholder text, secondary info
+            },
+            animation: {
+              'fade-in': 'fadeIn 0.3s ease-out',
+              'fade-in-fast': 'fadeIn 0.15s ease-out',
+            },
+            keyframes: {
+              fadeIn: {
+                '0%': { opacity: 0, transform: 'translateY(-5px)' },
+                '100%': { opacity: 1, transform: 'translateY(0)' },
+              },
             },
           }
         }
